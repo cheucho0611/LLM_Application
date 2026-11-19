@@ -2,7 +2,7 @@ import { useState } from 'react'
 
 const firstMessage = {
   role: 'assistant',
-  text: '안녕하세요. git_기초.txt 내용을 바탕으로 질문에 답하는 챗봇입니다.',
+  text: '안녕하세요. 수업 자료(Git·Linux·CI/CD)에서 관련 내용을 찾아 답하는 챗봇입니다.',
 }
 
 function App() {
@@ -27,9 +27,14 @@ function App() {
       })
       if (!response.ok) throw new Error(`HTTP ${response.status}`)  
       const data = await response.json()
-      const answer = data.answer
+      //기존 답변 후가 부분을 이 코드로 바꿉니다
       setMessages((current) => [
-        ...current, { role: "assistant", text: answer },
+        ...current, 
+        { 
+          role: "assistant",
+          text: data.answer,
+          sources: data.sources??[],//참고 파일 목록
+        },
       ])
     } catch (error) {
       setMessages((current) => [...current, {
@@ -54,10 +59,18 @@ function App() {
           <div className={`message ${message.role}`} key={index}>
             <span className="role">{message.role === 'user' ? '나' : '챗봇'}</span>
             <p>{message.text}</p>
+            {/* 참고 파일이 있을 때만 표시 */}
+            {message.sources?.length > 0 && (
+              <small className="sources">
+                참고자료:{message.sources.join(", ")}
+              </small>
+            )}
           </div>
         ))}
         {loading && <p className="status">답변을 작성하고 있습니다...</p>}
       </section>
+
+
 
       <form className="composer" onSubmit={send}>
         <label htmlFor="question">질문</label>
@@ -77,5 +90,6 @@ function App() {
     </main>
   )
 }
+
 
 export default App

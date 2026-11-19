@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from google import genai
 from pydantic import BaseModel, Field
+from retrieval import find_chunks
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -17,18 +18,31 @@ class ChatRequest(BaseModel):
 
 @app.post("/api/chat")
 def chat(request: ChatRequest):
-    document = (BASE_DIR / "data" / "git_기초.txt").read_text(encoding="utf-8")
-    prompt = f"""아래 자료를 바탕으로 질문에 답하세요.
-자료에 없으면 찾을 수 없다고 말하세요.
+    # Find paragraphs related to the question in backend/data/*.txt
+    chunks = find_chunks(request.question)
+    if not chunks:
+        return {
+            "answer": "자료에서 관련 내용을 찾지 못했습니다.",
+            "sources": [],
+        }
 
-자료:
-{document}
+    # Put the file name in front of each paragraph so the model knows the source
+    context = "\n\n".join(f"[{c['source']}]\n{c['text']}" for c in chunks)
+    prompt = f"""Answer the question using only the materials below.
+Each paragraph starts with its file name in [brackets].
+If the answer is not in the materials, say that it cannot be found.
+Answer in the same language as the question.
 
-질문: {request.question}"""
+Materials:
+{context}
+
+Question: {request.question}"""
 
     client = genai.Client()
     interaction = client.interactions.create(
         model="gemini-3.5-flash-lite",
         input=prompt,
     )
-    return {"answer": interaction.output_text}
+    # Unique file names, in the order they were found
+    sources = list(dict.fromkeys(c["source"] for c in chunks))
+    return {"answer": interaction.output_text, "sources": sources}
