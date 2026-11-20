@@ -21,14 +21,19 @@ def make_words(text):
 
 
 def find_chunks(question, documents):
-    question_words = make_words(question)
-    found = []
+    question_words = [w for w in make_words(question) if len(w) > 1]
+    scored = []
     for chunk in load_chunks(documents):
         content_words = make_words(chunk["text"])
-        for word in question_words:
-            if len(word) > 1 and word in content_words:
-                found.append(chunk)
-                break
-        if len(found) == 3:
-            break
-    return found
+        # Count question words that appear in this paragraph.
+        # A word also matches when one contains the other (e.g. "commit" and "commit-particle").
+        score = sum(
+            1
+            for word in question_words
+            if any(c in word or word in c for c in content_words if len(c) > 1)
+        )
+        if score > 0:
+            scored.append((score, chunk))
+    # Highest score first, keep the best 3 paragraphs.
+    scored.sort(key=lambda item: item[0], reverse=True)
+    return [chunk for score, chunk in scored[:3]]
