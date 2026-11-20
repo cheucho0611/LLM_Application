@@ -2,3 +2,7 @@
 .venv/
 __pycache__/
 output/
+sqlite_lab/*.db
+data_type.py
+.env.local
+_backup_before_phase1/

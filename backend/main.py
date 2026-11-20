@@ -1,14 +1,18 @@
+"""1단계: 공개 URL의 위험을 확인하기 위한 샘플 문서 챗봇."""
+
+import os
 from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from google import genai
 from pydantic import BaseModel, Field
-from retrieval import find_chunks
 
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
-BASE_DIR = Path(__file__).resolve().parent
-load_dotenv(BASE_DIR.parent / ".env")
+from retrieval import find_chunks  # noqa: E402
+from supabase_store import all_document_texts, list_documents  # noqa: E402
+
 app = FastAPI(docs_url="/api/docs", openapi_url="/api/openapi.json")
 
 
@@ -16,33 +20,30 @@ class ChatRequest(BaseModel):
     question: str = Field(min_length=1, max_length=500)
 
 
+@app.get("/api/documents")
+def get_documents():
+    return {"documents": list_documents()}
+
+
 @app.post("/api/chat")
 def chat(request: ChatRequest):
-    # Find paragraphs related to the question in backend/data/*.txt
-    chunks = find_chunks(request.question)
+    documents = all_document_texts()
+    chunks = find_chunks(request.question, documents)
     if not chunks:
-        return {
-            "answer": "자료에서 관련 내용을 찾지 못했습니다.",
-            "sources": [],
-        }
+        return {"answer": "공개 샘플 자료에서 찾지 못했습니다.", "sources": []}
 
-    # Put the file name in front of each paragraph so the model knows the source
-    context = "\n\n".join(f"[{c['source']}]\n{c['text']}" for c in chunks)
-    prompt = f"""Answer the question using only the materials below.
-Each paragraph starts with its file name in [brackets].
-If the answer is not in the materials, say that it cannot be found.
-Answer in the same language as the question.
+    context = ""
+    sources = []
+    for chunk in chunks:
+        context += "파일: " + chunk["source"] + "\n"
+        context += chunk["text"] + "\n\n"
+        if chunk["source"] not in sources:
+            sources.append(chunk["source"])
 
-Materials:
-{context}
-
-Question: {request.question}"""
-
-    client = genai.Client()
-    interaction = client.interactions.create(
-        model="gemini-3.5-flash-lite",
-        input=prompt,
+    prompt = "아래 발췌문만 근거로 답하세요. 없으면 근거가 부족하다고 말하세요.\n"
+    prompt += "발췌문:\n" + context + "\n질문: " + request.question
+    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+    answer = client.interactions.create(
+        model="gemini-3.5-flash-lite", input=prompt
     )
-    # Unique file names, in the order they were found
-    sources = list(dict.fromkeys(c["source"] for c in chunks))
-    return {"answer": interaction.output_text, "sources": sources}
+    return {"answer": answer.output_text, "sources": sources}
